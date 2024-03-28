@@ -1,0 +1,85 @@
+public with sharing class MaintenanceRequestHelper {
+    
+    public static void updateWorkOrders(list<Case> updatesMaintenancestrigger){
+        
+        Map<Id,Case> updatesMaintenances = new Map<Id,Case>();
+        
+        
+            for(Case a : updatesMaintenancestrigger){
+                if (a.IsClosed && (a.Type.equals('Repair') || a.Type.equals('Routine Maintenance'))){
+                    updatesMaintenances.put(a.id, a);
+                }
+            }
+        list<Equipment_Maintenance_Item__c> oldEquipments = [select Id, Equipment__c, Maintenance_Request__c from Equipment_Maintenance_Item__c WHERE Maintenance_Request__c in : updatesMaintenancestrigger];
+        list<Product2> equipments = [select Id, Maintenance_Cycle__c from Product2];
+        
+            if(!updatesMaintenances.isEmpty()){
+                
+        list<Case> newMaintenances = new list<Case>();
+        
+        Map<Id, Integer> equipmentMap = new Map<Id, Integer>();
+        Map<Id, Integer> maintenanceCycleDays = new Map<Id, Integer>();
+        Map<Id, Case> recoveryIdFromCase = new Map<Id, Case>();
+        
+        
+        
+        for(Product2 equimentGet : equipments){
+            if(equimentGet.Maintenance_Cycle__c != null){
+                equipmentMap.put(equimentGet.Id, Integer.valueOf(equimentGet.Maintenance_Cycle__c));
+            }
+        }
+        for(Equipment_Maintenance_Item__c maintenanceItem : oldEquipments){
+        String equipment = maintenanceItem.Equipment__c;
+        String request = maintenanceItem.Maintenance_Request__c;
+    
+        if(equipment != null && (!maintenanceCycleDays.containsKey(request) || equipmentMap.get(equipment) < maintenanceCycleDays.get(request))){
+            maintenanceCycleDays.put(request, equipmentMap.get(equipment));
+        }
+    }        
+        for(Case a : updatesMaintenances.values()){
+            		
+            		
+                Case newCase = new Case();
+                    newCase.Vehicle__c = a.Vehicle__c;
+                    newCase.Type = 'Routine Maintenance';
+                    newCase.Subject = String.isBlank(a.Subject) ? 'Routine Maintenance Request' : a.Subject + ' New';
+                    newCase.Date_Reported__c = Date.today();
+                    newCase.Date_Due__c = maintenanceCycleDays.containsKey(a.Id) ? Date.today().addDays(maintenanceCycleDays.get(a.Id)) : Date.today().addDays(30);
+                    newCase.Status = 'New';
+                    newCase.Product__c = a.Product__c;
+                    newCase.AccountId = a.AccountId;
+                    newCase.ContactId = a.ContactId;
+                    newCase.AssetId = a.AssetId;
+                    newCase.Origin = a.Origin;
+                    newCase.Reason = a.Reason;
+            		newCase.ParentId = a.Id;
+                    
+                    newMaintenances.add(newCase);
+            }
+            if(newMaintenances.size() > 0){
+                insert newMaintenances;
+            }
+        
+        for(Case recovery : newMaintenances){
+			     recoveryIdFromCase.put(recovery.ParentId, recovery);
+        }
+        
+        
+        	list<Equipment_Maintenance_Item__c> newEquipmentsToMergeInMaintenances = new list<Equipment_Maintenance_Item__c>();
+        	
+			
+        for(Equipment_Maintenance_Item__c serch : oldEquipments){
+            
+            Equipment_Maintenance_Item__c newItem = serch.clone(false, true, false, false);
+            newItem.Maintenance_Request__c = recoveryIdFromCase.get(serch.Maintenance_Request__c).Id;
+            newEquipmentsToMergeInMaintenances.add(newItem);
+            
+        }
+        	Insert newEquipmentsToMergeInMaintenances;
+                
+                
+        
+        	}
+        
+    	}
+    }
